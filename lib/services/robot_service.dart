@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 
@@ -25,6 +26,7 @@ class RobotService {
 
   static String _logBuffer = "";
   static bool _isConnecting = false;
+
 
   /// Initializes the WebSocket connection
   static Future<void> init() async {
@@ -217,6 +219,8 @@ class RobotService {
           }
         });
 
+
+        // Setup WebSocket Listener
         _channel!.stream.listen(
           (message) {
             if (message is String) {

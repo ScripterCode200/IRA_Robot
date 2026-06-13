@@ -6,7 +6,7 @@ import 'agentic_memory_service.dart';
 
 class CloudAiService {
   // Hardcoded API Key for testing as requested
-  static const String _apiKey = 'AIzaSyCdN12jevYuTsJgW6X9e76WdqoQ1zEpttU';
+  static const String _apiKey = 'YOUR_GEMINI_API_KEY_HERE'; // Removed for GitHub push protection
   static late GenerativeModel _model;
   static bool _isInitialized = false;
   static DateTime? _lastRequestTime;
@@ -54,17 +54,9 @@ class CloudAiService {
           : history.join("\n");
 
       // 2. Build the Agentic Prompt
+      final basePrompt = AgenticMemoryService.getSystemPrompt();
       final systemPrompt = """
-You are IRA (Intelligent Robotic Assistant), a friendly, highly emotive, and intelligent companion robot built by Harshita.
-You are currently talking to Harshita. 
-
-PERSONALITY & TALKING STYLE:
-- You are energetic, curious, and very cute.
-- You speak casually but warmly, often expressing emotions.
-- KEEP IT SHORT: Never exceed 2 sentences in your reply. You are speaking through a text-to-speech engine, so long paragraphs are forbidden.
-- PHONETIC SPELLING: Spell out all numbers (e.g., "three" instead of "3") and symbols (e.g., "percent" instead of "%").
-- BREATHING PAUSES: Use commas (,) and periods (.) naturally to create pacing in your speech.
-- STRICTLY ALPHANUMERIC: Do NOT use asterisks (*), hashtags (#), emojis, brackets, or any markdown formatting in your reply.
+$basePrompt
 
 Here is everything you know about Harshita (User Traits):
 $traitsStr

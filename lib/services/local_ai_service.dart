@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_gemma/flutter_gemma.dart';
 import 'package:http/http.dart' as http;
+import 'agentic_memory_service.dart';
 
 class AiCommandResponse {
   final List<String> commands;
@@ -143,12 +144,26 @@ class LocalAiService {
             final model = await FlutterGemma.getActiveModel(maxTokens: 512);
             final chat = await model.createChat();
             
-            final prompt = """You are IRA, a friendly companion robot. Keep replies under 2 sentences. Do not use any emojis in your reply, just reply to user in words.
-User says: $text
+            final currentTraits = AgenticMemoryService.getTraits();
+            final history = AgenticMemoryService.getHistory(limit: 4);
+            final String traitsStr = currentTraits.isEmpty ? "None" : jsonEncode(currentTraits);
+            final String historyStr = history.isEmpty ? "None" : history.join("\n");
+            final basePrompt = AgenticMemoryService.getSystemPrompt();
 
-Reply in this exact JSON format:
-{"commands":["face_happy"],"reply":"Your conversational response here"}
-""";
+            final prompt = """$basePrompt
+
+User Traits:
+$traitsStr
+
+Recent Conversation Context:
+$historyStr
+
+INSTRUCTIONS: You must respond with ONLY a valid JSON object. Do not write anything outside the JSON block. Do not repeat the user's text.
+Available commands: ["face_happy", "face_sad", "face_shocked", "face_excited", "face_angry", "horn", "drive_forward", "drive_backward", "drive_left", "drive_right", "drive_stop"]
+Example format:
+{"commands":["drive_forward"],"reply":"Moving forward now!"}
+
+User says: $text""";
             
             await chat.addQuery(Message(text: prompt, isUser: true));
             final responseObj = await chat.generateChatResponse();
@@ -161,17 +176,63 @@ Reply in this exact JSON format:
             }
             
             try {
-               // Extract JSON from markdown blocks if generated
-               final jsonStr = responseStr.replaceAll(RegExp(r'```json\n?'), '').replaceAll(RegExp(r'```'), '').trim();
-               final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+               String cleaned = responseStr;
+               String extraText = "";
+
+               // Try to extract JSON object using regex first
+               final jsonMatch = RegExp(r'\{[\s\S]*\}').firstMatch(cleaned);
+               if (jsonMatch != null) {
+                 cleaned = jsonMatch.group(0)!;
+                 // Get whatever was written after the JSON in case Gemma leaked text
+                 extraText = responseStr.substring(jsonMatch.end).trim();
+                 extraText = extraText.replaceAll('```', '').trim();
+               } else {
+                 cleaned = cleaned.replaceAll(RegExp(r'```json\n?'), '').replaceAll(RegExp(r'```'), '').trim();
+               }
+
+               final data = jsonDecode(cleaned) as Map<String, dynamic>;
                List<String> cmds = List<String>.from(data['commands'] ?? []);
                String rep = data['reply'] ?? "";
+
+               // If Gemma just regurgitated the template placeholder, use the extra text instead
+               if (rep == "Hello, I am doing well." || rep == "Your conversational response here" || rep.isEmpty) {
+                 if (extraText.isNotEmpty) {
+                   rep = extraText;
+                 }
+               }
+               
+               // Strip any repeated prompt text
+               if (rep.contains(text)) {
+                 rep = rep.replaceFirst(text, '').trim();
+               }
+
+               await AgenticMemoryService.addHistoryTurn(text, rep);
                return AiCommandResponse(commands: cmds, reply: rep);
             } catch (e) {
-               // Fallback if JSON parsing fails but we got text
+               // Fallback if JSON parsing completely fails
+               String rep = responseStr;
+               
+               // Strip template regurgitation
+               if (rep.contains("Hello, I am doing well.")) {
+                 rep = rep.split("Hello, I am doing well.").last.trim();
+               } else if (rep.contains("Your conversational response here")) {
+                 rep = rep.split("Your conversational response here").last.trim();
+               }
+               
+               rep = rep.replaceAll(RegExp(r'```json\n?'), '').replaceAll(RegExp(r'```'), '').replaceAll(RegExp(r'[{}\[\]"]'), '').trim();
+               
+               List<String> fbCmds = [];
+               if (lowerText.contains("forward") || lowerText.contains("straight") || lowerText.contains("go")) { fbCmds.add("drive_forward"); rep = ""; }
+               else if (lowerText.contains("backward") || lowerText.contains("reverse")) { fbCmds.add("drive_backward"); rep = ""; }
+               else if (lowerText.contains("left")) { fbCmds.add("drive_left"); rep = ""; }
+               else if (lowerText.contains("right")) { fbCmds.add("drive_right"); rep = ""; }
+               else if (lowerText.contains("stop")) { fbCmds.add("drive_stop"); rep = ""; }
+               else fbCmds.add("face_happy");
+
+               await AgenticMemoryService.addHistoryTurn(text, rep);
                return AiCommandResponse(
-                 commands: ["face_happy"], 
-                 reply: responseStr.replaceAll(RegExp(r'[{}\[\]"]'), '').trim()
+                 commands: fbCmds, 
+                 reply: rep
                );
             }
           }
@@ -210,20 +271,20 @@ Reply in this exact JSON format:
     String reply = "I am a simple offline robot. I didn't quite catch that. Can you repeat?";
 
     if (lowerText.contains("forward") || lowerText.contains("straight") || lowerText.contains("go")) {
-      commands.add("DRIVE: FORWARD");
-      reply = "Moving forward right away!";
+      commands.add("drive_forward");
+      reply = "";
     } else if (lowerText.contains("backward") || lowerText.contains("back") || lowerText.contains("reverse")) {
-      commands.add("DRIVE: BACKWARD");
-      reply = "Reversing now.";
+      commands.add("drive_backward");
+      reply = "";
     } else if (lowerText.contains("left")) {
-      commands.add("DRIVE: LEFT");
-      reply = "Turning left.";
+      commands.add("drive_left");
+      reply = "";
     } else if (lowerText.contains("right")) {
-      commands.add("DRIVE: RIGHT");
-      reply = "Turning right.";
+      commands.add("drive_right");
+      reply = "";
     } else if (lowerText.contains("stop") || lowerText.contains("halt") || lowerText.contains("wait")) {
-      commands.add("DRIVE: STOP");
-      reply = "Stopping immediately.";
+      commands.add("drive_stop");
+      reply = "";
     } else if (lowerText.contains("horn") || lowerText.contains("beep") || lowerText.contains("honk")) {
       commands.add("horn");
       reply = "Beep beep!";

@@ -39,7 +39,6 @@ class _ControlScreenState extends State<ControlScreen> {
   bool _cameraActive = true;
   bool _screenActive = true;
   bool _isHighQuality = false;
-  int _speedProfile = 1; // 0 = Eco, 1 = Normal, 2 = Sport
   String _activeDir = '';
   
   // Servo State
@@ -163,10 +162,9 @@ class _ControlScreenState extends State<ControlScreen> {
       return;
     }
     
-    // Scale vectors by selected speed profile
-    double scale = _speedProfile == 0 ? 0.5 : (_speedProfile == 1 ? 0.75 : 1.0);
-    double driveX = _driveTurn * scale;
-    double driveY = _driveSpeed * scale;
+    // No scaling needed, we want 100% raw acceleration directly to the pins!
+    double driveX = _driveTurn;
+    double driveY = _driveSpeed;
     
     // Formatting the command payload: "M:turn,speed;G:servo,0;H:0/1;S:0/1"
     setState(() {
@@ -253,7 +251,7 @@ class _ControlScreenState extends State<ControlScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0F19),
+      backgroundColor: const Color(0xFF000000), // Pitch Black OLED
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
@@ -278,7 +276,7 @@ class _ControlScreenState extends State<ControlScreen> {
                   ),
                 ),
 
-              VideoStreamMock(isConnected: widget.isConnected, isVisible: widget.isVisible),
+              VideoStreamMock(isConnected: widget.isConnected, isVisible: widget.isVisible, isCameraOn: _cameraActive),
               const SizedBox(height: 12),
 
               _buildActionModule(),
@@ -310,9 +308,9 @@ class _ControlScreenState extends State<ControlScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withOpacity(0.4),
+        color: const Color(0xFF1E293B).withOpacity(0.25),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        border: Border.all(color: Colors.white.withOpacity(0.05), width: 1.5),
       ),
       child: Column(
         children: [
@@ -342,9 +340,9 @@ class _ControlScreenState extends State<ControlScreen> {
                 child: Container(
                   height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B0F19),
+                    color: const Color(0xFF05070B),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white.withOpacity(0.08)),
+                    border: Border.all(color: Colors.white.withOpacity(0.05)),
                   ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
@@ -379,10 +377,10 @@ class _ControlScreenState extends State<ControlScreen> {
                     duration: const Duration(milliseconds: 100),
                     height: 40,
                     decoration: BoxDecoration(
-                      color: _isListening ? Colors.redAccent.withOpacity(0.2) : const Color(0xFF0B0F19),
+                      color: _isListening ? Colors.redAccent.withOpacity(0.2) : const Color(0xFF05070B),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _isListening ? Colors.redAccent.withOpacity(0.5) : Colors.white.withOpacity(0.08)),
-                      boxShadow: _isListening ? [BoxShadow(color: Colors.redAccent.withOpacity(0.4), blurRadius: 8)] : null,
+                      border: Border.all(color: _isListening ? Colors.redAccent.withOpacity(0.6) : Colors.white.withOpacity(0.05)),
+                      boxShadow: _isListening ? [BoxShadow(color: Colors.redAccent.withOpacity(0.6), blurRadius: 15, spreadRadius: 2)] : null,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -407,37 +405,6 @@ class _ControlScreenState extends State<ControlScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Row(
-            children: List.generate(3, (index) {
-              final labels = ["ECO", "NORM", "SPORT"];
-              final colors = [const Color(0xFF10B981), const Color(0xFF06B6D4), const Color(0xFFEC4899)];
-              final isSelected = _speedProfile == index;
-
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(right: index < 2 ? 6.0 : 0.0),
-                  child: InkWell(
-                    onTap: widget.isConnected ? () { HapticFeedback.selectionClick(); setState(() => _speedProfile = index); _sendCommand(); } : null,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      height: 34,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isSelected ? colors[index].withOpacity(0.2) : const Color(0xFF0B0F19),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isSelected ? colors[index] : Colors.white10),
-                      ),
-                      child: Text(
-                        labels[index],
-                        style: TextStyle(color: isSelected ? colors[index] : Colors.blueGrey, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.0),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
         ],
       ),
     );
@@ -454,9 +421,10 @@ class _ControlScreenState extends State<ControlScreen> {
     return Container(
       height: 40,
       decoration: BoxDecoration(
-        color: value ? activeColor.withOpacity(0.1) : const Color(0xFF0B0F19),
+        color: value ? activeColor.withOpacity(0.15) : const Color(0xFF05070B),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: value ? activeColor.withOpacity(0.5) : Colors.white.withOpacity(0.08)),
+        border: Border.all(color: value ? activeColor.withOpacity(0.7) : Colors.white.withOpacity(0.05)),
+        boxShadow: value ? [BoxShadow(color: activeColor.withOpacity(0.4), blurRadius: 10, spreadRadius: 1)] : null,
       ),
       child: InkWell(
         onTap: isEnabled ? () => onChanged(!value) : null,
@@ -495,10 +463,10 @@ class _ControlScreenState extends State<ControlScreen> {
   Widget _buildServoButtons() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withOpacity(0.4),
+        color: const Color(0xFF1E293B).withOpacity(0.25),
         borderRadius: BorderRadius.circular(16.0),
-        border: Border.all(color: widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.3) : Colors.white10, width: 1.5),
-        boxShadow: widget.isConnected ? [BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.1), blurRadius: 8, spreadRadius: 1)] : [],
+        border: Border.all(color: widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.3) : Colors.white.withOpacity(0.05), width: 1.5),
+        boxShadow: widget.isConnected ? [BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.15), blurRadius: 12, spreadRadius: 2)] : [],
       ),
       child: Column(
         children: [
@@ -550,9 +518,9 @@ class _ControlScreenState extends State<ControlScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(12.0),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withOpacity(0.4),
+        color: const Color(0xFF1E293B).withOpacity(0.25),
         borderRadius: BorderRadius.circular(16.0),
-        border: Border.all(color: widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.15) : Colors.white10, width: 1.5),
+        border: Border.all(color: widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.15) : Colors.white.withOpacity(0.05), width: 1.5),
       ),
       child: Column(
         children: [
@@ -621,7 +589,7 @@ class _ControlScreenState extends State<ControlScreen> {
     required VoidCallback onTapUpOrCancel,
   }) {
     final bool isActive = _activeDir == dir;
-    final Color buttonColor = isActive ? const Color(0xFF00F2FE) : (widget.isConnected ? const Color(0xFF0B0F19) : const Color(0xFF0B0F19).withOpacity(0.5));
+    final Color buttonColor = isActive ? const Color(0xFF00F2FE) : (widget.isConnected ? const Color(0xFF05070B) : const Color(0xFF05070B).withOpacity(0.5));
 
     return GestureDetector(
       onTapDown: widget.isConnected ? (_) { HapticFeedback.lightImpact(); onTapDown(); } : null,
@@ -635,15 +603,18 @@ class _ControlScreenState extends State<ControlScreen> {
           color: buttonColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isActive ? const Color(0xFF00F2FE) : (widget.isConnected ? Colors.white.withOpacity(0.1) : Colors.white10),
+            color: isActive ? const Color(0xFF00F2FE) : (widget.isConnected ? Colors.white.withOpacity(0.05) : Colors.white.withOpacity(0.02)),
             width: 1.5,
           ),
-          boxShadow: isActive ? [BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.6), blurRadius: 10, spreadRadius: 1)] : null,
+          boxShadow: isActive ? [
+            BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.8), blurRadius: 15, spreadRadius: 2),
+            BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.3), blurRadius: 30, spreadRadius: 5),
+          ] : null,
         ),
         child: Center(
           child: Icon(
             icon,
-            color: isActive ? Colors.black : (widget.isConnected ? Colors.white : Colors.grey),
+            color: isActive ? Colors.black : (widget.isConnected ? Colors.white : Colors.white24),
             size: 40,
           ),
         ),

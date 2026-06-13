@@ -15,11 +15,9 @@ void main() async {
 
   await MemoryService.initialize();
   
-  // Set orientation to support both portrait and landscape (Cockpit controls adapt gracefully)
+  // Lock orientation to Portrait Mode for the Narzo 70 Pro
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
   ]);
   
   // High-tech translucent system overlay styling

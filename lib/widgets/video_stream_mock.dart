@@ -167,8 +167,14 @@ class _AviMjpegWriter {
 class VideoStreamMock extends StatefulWidget {
   final bool isConnected;
   final bool isVisible;
+  final bool isCameraOn;
   static Uint8List? latestFrame;
-  const VideoStreamMock({super.key, required this.isConnected, this.isVisible = true});
+  const VideoStreamMock({
+    super.key, 
+    required this.isConnected, 
+    required this.isCameraOn,
+    this.isVisible = true
+  });
 
   @override
   State<VideoStreamMock> createState() => _VideoStreamMockState();
@@ -504,12 +510,20 @@ class _VideoStreamMockState extends State<VideoStreamMock>
     if (!widget.isConnected) {
       return Container(color: const Color(0xFF020617), child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Container(width: 52, height: 52,
-          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.red.withOpacity(0.08), border: Border.all(color: Colors.red.withOpacity(0.3), width: 1.5)),
-          child: const Icon(Icons.videocam_off_rounded, color: Colors.redAccent, size: 26)),
+          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.blueGrey.withOpacity(0.08), border: Border.all(color: Colors.blueGrey.withOpacity(0.3), width: 1.5)),
+          child: const Icon(Icons.link_off_rounded, color: Colors.blueGrey, size: 26)),
         const SizedBox(height: 12),
-        const Text("NO SIGNAL", style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 3, fontFamily: 'monospace')),
-        const SizedBox(height: 4),
-        Text("Connect to robot Wi-Fi to activate feed", style: TextStyle(color: Colors.blueGrey.shade500, fontSize: 9)),
+        const Text("Please connect to the robot", style: TextStyle(color: Colors.blueGrey, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+      ])));
+    }
+    
+    if (!widget.isCameraOn) {
+      return Container(color: const Color(0xFF020617), child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Container(width: 52, height: 52,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.amber.withOpacity(0.08), border: Border.all(color: Colors.amber.withOpacity(0.3), width: 1.5)),
+          child: const Icon(Icons.videocam_off_rounded, color: Colors.amber, size: 26)),
+        const SizedBox(height: 12),
+        const Text("Please turn on the camera to see the live stream", style: TextStyle(color: Colors.amber, fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
       ])));
     }
     return ValueListenableBuilder<Uint8List?>(

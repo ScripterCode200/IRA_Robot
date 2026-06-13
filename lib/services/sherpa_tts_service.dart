@@ -128,10 +128,15 @@ class SherpaTtsService {
 
       if (RobotService.isConnected) {
         // Stream directly to Robot I2S
-        final int16Data = Int16List(audio.samples.length);
-        double volumeBoost = 1.2; // Safe 120% Software Volume Boost (prevents static clipping!)
-        for (int i = 0; i < audio.samples.length; i++) {
-          int val = (audio.samples[i] * volumeBoost * 32767).round();
+        // DOWNSAMPLE from 22050Hz to 11025Hz (halves bandwidth)
+        final downsampledLength = audio.samples.length ~/ 2;
+        final int16Data = Int16List(downsampledLength);
+        double volumeBoost = 1.2; // Safe 120% Software Volume Boost
+        for (int i = 0; i < downsampledLength; i++) {
+          int originalIndex = i * 2;
+          // Apply averaging (low-pass filter) to fix the "treble/tinny" aliasing issue
+          double avgSample = (audio.samples[originalIndex] + audio.samples[originalIndex + 1]) / 2.0;
+          int val = (avgSample * volumeBoost * 32767).round();
           if (val > 32767) val = 32767;
           if (val < -32768) val = -32768;
           int16Data[i] = val;
@@ -140,12 +145,16 @@ class SherpaTtsService {
         
         RobotService.sendAudioStart();
         
-        int chunkSize = 1000; // MUST be under 1400 bytes to prevent WebSocket fragmentation!
+        int chunkSize = 1400; // Max optimal MTU size
+        int chunkCount = 0;
         for (int i = 0; i < byteData.length; i += chunkSize) {
           int end = (i + chunkSize < byteData.length) ? i + chunkSize : byteData.length;
           RobotService.streamAudioChunk(byteData.sublist(i, end));
-          // Tiny 1ms yield to prevent Flutter UI freezing during massive burst transmission
-          await Future.delayed(const Duration(milliseconds: 1));
+          
+          chunkCount++;
+          if (chunkCount % 15 == 0) {
+            await Future.delayed(Duration.zero); // Micro-yield to pump socket events instantly
+          }
         }
         
         RobotService.sendAudioEnd();

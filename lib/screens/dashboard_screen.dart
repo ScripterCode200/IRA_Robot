@@ -3,6 +3,9 @@ import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
@@ -14,6 +17,9 @@ import '../services/sherpa_tts_service.dart';
 import '../services/tts_download_service.dart';
 import '../widgets/video_stream_mock.dart';
 import '../services/image_enhancer_service.dart';
+import '../services/rag_cache_service.dart';
+import 'personality_editor_screen.dart';
+import 'rag_editor_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final Function(bool) onConnectionChanged;
@@ -40,6 +46,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   bool _headlightsActive = false;
   bool _isOfflineMode = true; // Default to Offline Mode
   bool _useHindi = false;
+  int _aiDriveForwardMs = 1500;
+  int _aiDriveTurnMs = 1000;
 
   // Speech Recognition States
   late stt.SpeechToText _speech;
@@ -87,6 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     SherpaTtsService.initialize();
     LocalAiService.initialize();
     CloudAiService.initialize();
+    RagCacheService.initialize();
 
     if (widget.isConnected) {
       _startLogPoller();
@@ -119,6 +128,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     if (mounted) {
       setState(() {
         _isOfflineMode = prefs.getBool('isOfflineMode') ?? true;
+        _aiDriveForwardMs = prefs.getInt('aiDriveForwardMs') ?? 1500;
+        _aiDriveTurnMs = prefs.getInt('aiDriveTurnMs') ?? 1000;
       });
     }
   }
@@ -250,6 +261,190 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   void _showVoiceSelectionSheet() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent, // Transparent to allow glassy blur effect
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  height: MediaQuery.of(context).size.height * 0.6, // 60% of screen
+                  padding: const EdgeInsets.only(top: 12, left: 24, right: 24, bottom: 24),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A).withOpacity(0.85),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+                    border: Border(top: BorderSide(color: Colors.white.withOpacity(0.15), width: 1.5)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Drag Pill
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.3),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      
+                      // Title
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00F2FE).withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.record_voice_over_rounded, color: Color(0xFF00F2FE), size: 24),
+                          ),
+                          const SizedBox(width: 16),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text("Offline Voice Engines", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                SizedBox(height: 2),
+                                Text("Powered by Piper VITS", style: TextStyle(color: Colors.blueGrey, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 1.0)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 24),
+                      
+                      // List
+                      Expanded(
+                        child: ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: TtsDownloadService.availableVoices.length,
+                          itemBuilder: (context, index) {
+                            final voice = TtsDownloadService.availableVoices[index];
+                            final isSelected = SherpaTtsService.currentVoiceId == voice.id;
+
+                            return FutureBuilder<bool>(
+                              future: TtsDownloadService.isVoiceDownloaded(voice.id),
+                              builder: (context, snapshot) {
+                                final isDownloaded = snapshot.data ?? false;
+                                
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? const Color(0xFF00F2FE).withOpacity(0.1) : const Color(0xFF1E293B).withOpacity(0.5),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: isSelected ? const Color(0xFF00F2FE).withOpacity(0.5) : Colors.white.withOpacity(0.05),
+                                      width: isSelected ? 1.5 : 1.0,
+                                    ),
+                                    boxShadow: isSelected ? [BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.1), blurRadius: 10)] : [],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      // Avatar / Icon
+                                      Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: isSelected 
+                                            ? const LinearGradient(colors: [Color(0xFF00F2FE), Color(0xFF4FACFE)]) 
+                                            : LinearGradient(colors: [Colors.blueGrey.shade800, Colors.blueGrey.shade900]),
+                                        ),
+                                        child: Icon(
+                                          isSelected ? Icons.check_rounded : Icons.person_rounded,
+                                          color: isSelected ? Colors.black87 : Colors.white54,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      
+                                      // Text Details
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(voice.displayName, style: TextStyle(color: isSelected ? Colors.white : Colors.white70, fontSize: 15, fontWeight: FontWeight.bold)),
+                                            const SizedBox(height: 4),
+                                            Text(voice.description, style: TextStyle(color: Colors.blueGrey.shade400, fontSize: 11)),
+                                          ],
+                                        ),
+                                      ),
+                                      
+                                      // Actions
+                                      if (isDownloaded)
+                                        if (isSelected)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                            decoration: BoxDecoration(color: const Color(0xFF00F2FE).withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                                            child: const Text("ACTIVE", style: TextStyle(color: Color(0xFF00F2FE), fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                                          )
+                                        else
+                                          ElevatedButton(
+                                            onPressed: () async {
+                                              await SherpaTtsService.changeVoice(voice.id);
+                                              setSheetState(() {});
+                                              setState(() {});
+                                              _speak("Voice changed to ${voice.displayName}");
+                                            },
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.white.withOpacity(0.1),
+                                              foregroundColor: Colors.white,
+                                              elevation: 0,
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            ),
+                                            child: const Text("Select"),
+                                          )
+                                      else
+                                        ElevatedButton.icon(
+                                          icon: const Icon(Icons.download_rounded, size: 16),
+                                          label: const Text("Get"),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.orangeAccent.withOpacity(0.2),
+                                            foregroundColor: Colors.orangeAccent,
+                                            elevation: 0,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            side: const BorderSide(color: Colors.orangeAccent, width: 1),
+                                          ),
+                                          onPressed: () async {
+                                            // Show progress dialog
+                                            showDialog(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (context) => _DownloadProgressDialog(voice: voice),
+                                            ).then((_) => setSheetState(() {}));
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showDriveSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
       backgroundColor: const Color(0xFF1E1E1E),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
@@ -261,63 +456,64 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text("Offline Voice Settings (Piper VITS)", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text("AI Movement Duration", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: TtsDownloadService.availableVoices.length,
-                      itemBuilder: (context, index) {
-                        final voice = TtsDownloadService.availableVoices[index];
-                        final isSelected = SherpaTtsService.currentVoiceId == voice.id;
-
-                        return FutureBuilder<bool>(
-                          future: TtsDownloadService.isVoiceDownloaded(voice.id),
-                          builder: (context, snapshot) {
-                            final isDownloaded = snapshot.data ?? false;
-                            
-                            return ListTile(
-                              leading: Icon(
-                                isSelected ? Icons.check_circle_rounded : Icons.record_voice_over,
-                                color: isSelected ? Colors.greenAccent : Colors.white54,
-                              ),
-                              title: Text(voice.displayName, style: const TextStyle(color: Colors.white)),
-                              subtitle: Text(voice.description, style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                              trailing: isDownloaded
-                                  ? (isSelected
-                                      ? const Text("ACTIVE", style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold))
-                                      : ElevatedButton(
-                                          onPressed: () async {
-                                            await SherpaTtsService.changeVoice(voice.id);
-                                            setSheetState(() {});
-                                            setState(() {});
-                                            _speak("Voice changed to ${voice.displayName}");
-                                          },
-                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-                                          child: const Text("Select"),
-                                        ))
-                                  : ElevatedButton.icon(
-                                      icon: const Icon(Icons.download, size: 16),
-                                      label: const Text("Download"),
-                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
-                                      onPressed: () async {
-                                        setSheetState(() {
-                                          voice.description; // Just forcing rebuild to show loading if we had local state
-                                        });
-                                        
-                                        // Show progress dialog
-                                        showDialog(
-                                          context: context,
-                                          barrierDismissible: false,
-                                          builder: (context) => _DownloadProgressDialog(voice: voice),
-                                        ).then((_) => setSheetState(() {}));
-                                      },
-                                    ),
-                            );
+                  const Text("Configure how long the robot moves when given a voice command.", style: TextStyle(color: Colors.white70)),
+                  const SizedBox(height: 20),
+                  const Text("Forward & Backward", style: TextStyle(color: Colors.white70)),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 70,
+                        child: Text("${_aiDriveForwardMs}ms", style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _aiDriveForwardMs.toDouble(),
+                          min: 1,
+                          max: 5000,
+                          divisions: 4999,
+                          activeColor: Colors.greenAccent,
+                          onChanged: (val) {
+                            setSheetState(() => _aiDriveForwardMs = val.toInt());
+                            setState(() => _aiDriveForwardMs = val.toInt());
                           },
-                        );
-                      },
-                    ),
+                          onChangeEnd: (val) async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setInt('aiDriveForwardMs', val.toInt());
+                          },
+                        ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 16),
+                  const Text("Left & Right Turns", style: TextStyle(color: Colors.white70)),
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 70,
+                        child: Text("${_aiDriveTurnMs}ms", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                      ),
+                      Expanded(
+                        child: Slider(
+                          value: _aiDriveTurnMs.toDouble(),
+                          min: 1,
+                          max: 5000,
+                          divisions: 4999,
+                          activeColor: Colors.blueAccent,
+                          onChanged: (val) {
+                            setSheetState(() => _aiDriveTurnMs = val.toInt());
+                            setState(() => _aiDriveTurnMs = val.toInt());
+                          },
+                          onChangeEnd: (val) async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setInt('aiDriveTurnMs', val.toInt());
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
                 ],
               ),
             );
@@ -561,12 +757,26 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       _whisperStatus = "PROCESSING";
     });
 
-    // Send to Selected AI
-    AiCommandResponse? response;
-    if (_isOfflineMode) {
-      response = await LocalAiService.parseRobotCommand(text);
+    // 1. Check RAG Cache First
+    AiCommandResponse? response = RagCacheService.findMatch(text);
+    bool isCacheHit = response != null;
+
+    if (isCacheHit) {
+      setState(() {
+        _robotLogs.add("⚡ [CACHE HIT] Direct match found. Bypassing AI processing.");
+      });
     } else {
-      response = await CloudAiService.parseRobotCommand(text);
+      // 2. Send to Selected AI if not cached
+      if (_isOfflineMode) {
+        response = await LocalAiService.parseRobotCommand(text);
+      } else {
+        response = await CloudAiService.parseRobotCommand(text);
+      }
+      
+      // 3. Save successful new response to Cache
+      if (response != null) {
+        await RagCacheService.cacheResponse(text, response);
+      }
     }
 
     if (!mounted) return;
@@ -589,6 +799,11 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           _robotLogs.add("🤖 [CMD]: $actionsList");
         });
         for (var cmd in response.commands) {
+          if (cmd == "drive_forward" || cmd == "drive_backward") {
+            cmd = "$cmd:$_aiDriveForwardMs";
+          } else if (cmd == "drive_left" || cmd == "drive_right") {
+            cmd = "$cmd:$_aiDriveTurnMs";
+          }
           RobotService.sendHttpCommand(cmd);
           await Future.delayed(const Duration(milliseconds: 600));
         }
@@ -699,22 +914,20 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     final accentColor = widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0F19),
+      backgroundColor: const Color(0xFF000000), // Pitch Black AMOLED Background
       body: Stack(
         children: [
-          // Main Body Content
           SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 100.0), // extra bottom margin for Floating Button
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 80.0), // Padding for FAB
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 8),
                   // App Title & Header
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -722,378 +935,276 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                           Text(
                             "Dashboard",
                             style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 2.0,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.5,
                               color: Colors.white,
-                              shadows: [
-                                Shadow(
-                                  color: accentColor.withOpacity(0.5),
-                                  blurRadius: 8,
-                                ),
-                              ],
+                              shadows: [Shadow(color: accentColor.withOpacity(0.5), blurRadius: 10)],
                             ),
                           ),
                           const SizedBox(height: 4),
                           Row(
                             children: [
                               Container(
-                                width: 6,
-                                height: 6,
+                                width: 8, height: 8,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: widget.isConnected ? const Color(0xFF00F2FE) : Colors.red,
+                                  color: widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.6) : Colors.red.withOpacity(0.6),
-                                      blurRadius: 4,
-                                      spreadRadius: 2,
+                                      color: (widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF)).withOpacity(0.6),
+                                      blurRadius: 6, spreadRadius: 2,
                                     ),
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 8),
                               Text(
-                                widget.isConnected ? "Connected" : "Disconnected",
+                                widget.isConnected ? "SYSTEM ONLINE" : "SYSTEM OFFLINE",
                                 style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1.2,
-                                  color: widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFF94A3B8),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.5,
+                                  color: widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF),
                                 ),
                               ),
                             ],
                           ),
                         ],
                       ),
-                      Row(
-                        children: [
-                          // Custom AI Toggle
-                          GestureDetector(
-                            onTap: () async {
-                              HapticFeedback.lightImpact();
-                              final prefs = await SharedPreferences.getInstance();
-                              setState(() {
-                                _isOfflineMode = !_isOfflineMode;
-                                prefs.setBool('isOfflineMode', _isOfflineMode);
-                                _robotLogs.add("🤖 [SYS] Brain switched to ${_isOfflineMode ? 'LOCAL OFFLINE' : 'CLOUD AGENTIC'} mode.");
-                              });
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              margin: const EdgeInsets.only(right: 12),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: _isOfflineMode ? const Color(0xFF10B981).withOpacity(0.15) : const Color(0xFF8B5CF6).withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: _isOfflineMode ? const Color(0xFF10B981).withOpacity(0.4) : const Color(0xFF8B5CF6).withOpacity(0.4),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _isOfflineMode ? Icons.memory_rounded : Icons.cloud_sync_rounded,
-                                    size: 14,
-                                    color: _isOfflineMode ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    _isOfflineMode ? "Local" : "Cloud",
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 1.0,
-                                      color: _isOfflineMode ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // Voice Selector Button
-                          if (_isOfflineMode)
-                            GestureDetector(
-                              onTap: () => _showVoiceSelectionSheet(),
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 12),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.amber.withOpacity(0.4)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.record_voice_over_rounded, size: 14, color: Colors.amber),
-                                    const SizedBox(width: 6),
-                                    const Text("VOICE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          // Glowing Badge
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: accentColor.withOpacity(0.1),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: accentColor.withOpacity(0.3), width: 1.0),
-                            ),
-                            child: Icon(
-                              widget.isConnected ? Icons.precision_manufacturing_rounded : Icons.wifi_off_rounded,
-                              color: accentColor,
-                              size: 20,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
+                  
                   const SizedBox(height: 16),
-
-                  // Connection Panel
+                  
+                  // Action Buttons Panel
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B).withOpacity(0.4),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _isConnecting
-                            ? Colors.amber.withOpacity(0.3)
-                            : (widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.2) : Colors.white10),
-                        width: 1.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
+                      color: const Color(0xFF1E293B).withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.05), width: 1.5),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Voice Selection Button
+                        IconButton(
+                          icon: const Icon(Icons.record_voice_over_rounded, color: Colors.amberAccent, size: 24),
+                          tooltip: "Voice Settings",
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            _showVoiceSelectionSheet();
+                          },
+                        ),
+                        // RAG Cache Button
+                        IconButton(
+                          icon: const Icon(Icons.memory_rounded, color: Colors.blueAccent, size: 24),
+                          tooltip: "RAG Cache",
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const RagEditorScreen()));
+                          },
+                        ),
+                        // Personality Editor Button
+                        IconButton(
+                          icon: const Icon(Icons.psychology_alt_rounded, color: Colors.white70, size: 24),
+                          tooltip: "Personality",
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            Navigator.push(context, MaterialPageRoute(builder: (context) => const PersonalityEditorScreen()));
+                          },
+                        ),
+                        Container(
+                          width: 1.5,
+                          height: 30,
+                          color: Colors.white.withOpacity(0.1),
+                        ),
+                        // Custom Offline / Cloud Toggle
+                        GestureDetector(
+                          onTap: () async {
+                            HapticFeedback.selectionClick();
+                            final val = !_isOfflineMode;
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setBool('isOfflineMode', val);
+                            setState(() => _isOfflineMode = val);
+                          },
+                          child: Container(
+                            width: 72,
+                            height: 36,
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: Colors.white.withOpacity(0.1)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: _isOfflineMode ? Colors.amber.withOpacity(0.2) : Colors.blue.withOpacity(0.2),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
+                            child: Stack(
+                              children: [
+                                AnimatedAlign(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeOutBack,
+                                  alignment: _isOfflineMode ? Alignment.centerRight : Alignment.centerLeft,
+                                  child: Container(
+                                    width: 26,
+                                    height: 26,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _isOfflineMode ? Colors.amber : Colors.blue,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: (_isOfflineMode ? Colors.amber : Colors.blue).withOpacity(0.6),
+                                          blurRadius: 6,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      _isOfflineMode ? Icons.memory_rounded : Icons.cloud_rounded,
+                                      color: Colors.black,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ),
+                                Align(
+                                  alignment: _isOfflineMode ? Alignment.centerLeft : Alignment.centerRight,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    child: Text(
+                                      _isOfflineMode ? "LCL" : "CLD",
+                                      style: TextStyle(
+                                        color: _isOfflineMode ? Colors.amber.withOpacity(0.8) : Colors.blue.withOpacity(0.8),
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 1.0,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
+                  ),
+                  
+                  const SizedBox(height: 24),
+
+                  // Connection Control Panel (Glassmorphism)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B).withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _isConnecting
+                            ? Colors.amber.withOpacity(0.4)
+                            : (widget.isConnected ? const Color(0xFF00F2FE).withOpacity(0.3) : const Color(0xFFD946EF).withOpacity(0.3)),
+                        width: 1.5,
+                      ),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 5))],
+                    ),
                     child: Row(
                       children: [
-                        // Signal Icon
                         Container(
-                          padding: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: (widget.isConnected ? const Color(0xFF00F2FE) : Colors.blueGrey).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
+                            color: (widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF)).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(
                             widget.isConnected ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                            color: widget.isConnected ? const Color(0xFF00F2FE) : Colors.blueGrey,
-                            size: 18,
+                            color: widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF),
+                            size: 24,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        // Connection Info
+                        const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                widget.isConnected ? "Connection Status: Online" : "Connection Status: Offline",
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.8,
-                                  color: widget.isConnected ? const Color(0xFF00F2FE) : Colors.white,
-                                ),
+                                "ROBOT UPLINK",
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: Colors.blueGrey.shade300),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.isConnected ? "Connected to ESP32" : "Awaiting Connection...",
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        // Connect Toggle Button
-                        SizedBox(
-                          height: 34,
-                          child: ElevatedButton(
-                            onPressed: _isConnecting ? null : _toggleConnection,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: widget.isConnected 
-                                  ? Colors.red.withOpacity(0.15) 
-                                  : const Color(0xFF8B5CF6).withOpacity(0.15),
-                              foregroundColor: widget.isConnected 
-                                  ? Colors.redAccent 
-                                  : const Color(0xFFC084FC),
-                              side: BorderSide(
-                                color: widget.isConnected ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFC084FC).withOpacity(0.5),
-                                width: 1.0,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ElevatedButton(
+                          onPressed: _isConnecting ? null : _toggleConnection,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: widget.isConnected ? Colors.red.withOpacity(0.15) : const Color(0xFF00F2FE).withOpacity(0.15),
+                            foregroundColor: widget.isConnected ? Colors.redAccent : const Color(0xFF00F2FE),
+                            side: BorderSide(
+                              color: widget.isConnected ? Colors.redAccent.withOpacity(0.5) : const Color(0xFF00F2FE).withOpacity(0.5),
+                              width: 1.5,
                             ),
-                            child: _isConnecting
-                                ? const SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.amber),
-                                    ),
-                                  )
-                                : Text(
-                                    widget.isConnected ? "OFFLINE" : "CONNECT",
-                                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.8),
-                                  ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            elevation: 0,
                           ),
+                          child: _isConnecting
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.amber)))
+                              : Text(
+                                  widget.isConnected ? "DISCONNECT" : "CONNECT",
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0),
+                                ),
                         ),
                       ],
                     ),
                   ),
+
                   const SizedBox(height: 16),
-                  
-                  // Language/TTS Toggle removed per user request
-                  // AP Wifi Setup Instructions (Collapsible to keep layout extremely clean)
-                  if (!widget.isConnected) ...[
-                    InkWell(
-                      onTap: () => setState(() => _showGuide = !_showGuide),
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B).withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white10),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.info_outline_rounded, color: Colors.blueAccent.shade100, size: 16),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  "ROBOT AP WI-FI CONFIG STEPS",
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.0,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Icon(
-                              _showGuide ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                              color: Colors.blueAccent.shade200,
-                              size: 16,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (_showGuide) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white.withOpacity(0.05)),
-                        ),
-                        child: Column(
-                          children: [
-                             _buildStepRow("1", "Open your mobile system Wi-Fi settings."),
-                             _buildStepRow("2", "Connect to SSID: 'Harshita_IRA' (Password: Shivam21074)."),
-                             _buildStepRow("3", "Return to this app and tap 'CONNECT' above."),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                  ],
 
-                  // Telemetry removed per user request
-
-                  // Console logs header
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "System Logs",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
-                          color: Colors.blueGrey.shade400,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Missing Offline Model Warning
+                  // Missing Offline Model Warning (only shows if missing and offline mode selected)
                   if (_isOfflineMode && !LocalAiService.hasRealGemma)
                     Container(
                       padding: const EdgeInsets.all(12),
-                      margin: const EdgeInsets.only(bottom: 12),
+                      margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
                         color: Colors.amber.withOpacity(0.1),
-                        border: Border.all(color: Colors.amber.withOpacity(0.3)),
-                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.amber.withOpacity(0.4), width: 1.5),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                      child: Row(
                         children: [
-                          const Text(
-                            "Local AI Model Not Installed",
-                            style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            "Please download the model for offline functionality.",
-                            style: TextStyle(color: Colors.white70, fontSize: 11),
-                          ),
-                          const SizedBox(height: 8),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.amber.withOpacity(0.2),
-                              foregroundColor: Colors.amberAccent,
-                              elevation: 0,
+                          const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text("Offline AI Model Missing", style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
+                                Text("Required for voice commands without internet.", style: TextStyle(color: Colors.white70, fontSize: 10)),
+                              ],
                             ),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.withOpacity(0.2), foregroundColor: Colors.amberAccent, elevation: 0),
                             onPressed: _showDownloadDialog,
-                            icon: const Icon(Icons.download_rounded, size: 16),
-                            label: const Text("Download Local Model", style: TextStyle(fontSize: 12)),
+                            child: const Text("DOWNLOAD", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                           ),
                         ],
                       ),
                     ),
 
-                  // Console Log Box (Elegant glass viewport)
-                  Container(
-                    height: 200,
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF070A13),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
-                    ),
-                    child: ListView.builder(
-                      reverse: true,
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: _robotLogs.length,
-                      itemBuilder: (context, index) {
-                        final log = _robotLogs[_robotLogs.length - 1 - index];
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 3.0),
-                          child: Text(
-                            log,
-                            style: const TextStyle(
-                              color: Color(0xFFCBD5E1),
-                              fontSize: 10,
-                              fontFamily: 'monospace',
-                              height: 1.3,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                  const SizedBox(height: 8),
+
+                  // Flexible Space for either Wi-Fi Guide or Logs
+                  Expanded(
+                    child: widget.isConnected 
+                      ? _buildLogViewer() 
+                      : _buildWifiGuide(),
                   ),
                 ],
               ),
@@ -1109,50 +1220,177 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
+  Widget _buildWifiGuide() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.info_outline_rounded, color: Colors.blueAccent, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              "ROBOT CONNECTION STEPS",
+              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: Colors.blueAccent.shade100),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.05), width: 1.5),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildStepRow("1", "Turn ON your Mobile Hotspot", Icons.cell_wifi_rounded),
+                _buildStepRow("2", "Set Hotspot Name to:\n'Shivam'\n(Password: 1234567891)", Icons.settings_rounded),
+                _buildStepRow("3", "Turn ON the robot and tap 'CONNECT'", Icons.power_settings_new_rounded),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepRow(String number, String text, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: const Color(0xFF00F2FE).withOpacity(0.2),
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.5)),
+          ),
+          alignment: Alignment.center,
+          child: Text(number, style: const TextStyle(color: Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 14)),
+        ),
+        const SizedBox(width: 16),
+        Icon(icon, color: Colors.white54, size: 24),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, height: 1.4)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLogViewer() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          "SYSTEM LOGS",
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2, color: Colors.blueGrey.shade400),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF070A13),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withOpacity(0.05), width: 1.5),
+            ),
+            child: ListView.builder(
+              reverse: true,
+              physics: const BouncingScrollPhysics(),
+              itemCount: _robotLogs.length,
+              itemBuilder: (context, index) {
+                final log = _robotLogs[_robotLogs.length - 1 - index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Text(
+                    log,
+                    style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 11, fontFamily: 'monospace', height: 1.4),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildVoiceFAB() {
     return GestureDetector(
       onLongPressStart: (_) => _startListening(),
       onLongPressEnd: (_) => _stopListening(),
       child: AnimatedBuilder(
-        animation: _pulseController,
+        animation: Listenable.merge([_pulseController, _waveController]),
         builder: (context, child) {
-          final double scale = 1.0 + (_pulseController.value * 0.05);
-          return Transform.scale(
-            scale: _isListening ? 1.15 : scale,
-            child: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: _isListening
-                      ? [const Color(0xFF00F2FE), const Color(0xFFEC4899)]
-                      : [const Color(0xFF8B5CF6), const Color(0xFF00F2FE)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: (_isListening ? const Color(0xFFEC4899) : const Color(0xFF8B5CF6)).withOpacity(0.4),
-                    blurRadius: _isListening ? 20 : 10,
-                    spreadRadius: _isListening ? 3 : 1,
-                  ),
+          // Normal idle breathing scale
+          final double idleScale = 1.0 + (math.sin(_pulseController.value * math.pi * 2) * 0.05);
+          // Active listening bouncy scale
+          final double activeScale = 1.1 + (math.sin(_waveController.value * math.pi * 8) * 0.1);
+          final double scale = _isListening ? activeScale : idleScale;
+
+          return SizedBox(
+            width: 140,
+            height: 140,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Glowing Ripples when listening
+                if (_isListening) ...[
+                  for (int i = 0; i < 3; i++)
+                    _buildRipple(i, _waveController.value),
                 ],
-                border: Border.all(
-                  color: Colors.white30,
-                  width: 1.5,
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                    color: Colors.white,
-                    size: 26,
+                
+                // Main Button
+                Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 65,
+                    height: 65,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(
+                        colors: _isListening
+                            ? [const Color(0xFF00F2FE), const Color(0xFFEC4899), const Color(0xFF8B5CF6)]
+                            : [const Color(0xFF1E293B), const Color(0xFF0F172A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      boxShadow: [
+                        if (_isListening)
+                          BoxShadow(
+                            color: const Color(0xFF00F2FE).withOpacity(0.6),
+                            blurRadius: 25,
+                            spreadRadius: 8,
+                          ),
+                        if (_isListening)
+                          BoxShadow(
+                            color: const Color(0xFFEC4899).withOpacity(0.4),
+                            blurRadius: 40,
+                            spreadRadius: 12,
+                          ),
+                        if (!_isListening)
+                          BoxShadow(
+                            color: const Color(0xFF00F2FE).withOpacity(0.3),
+                            blurRadius: 12,
+                            spreadRadius: 2,
+                          ),
+                      ],
+                      border: Border.all(
+                        color: _isListening ? Colors.white : const Color(0xFF00F2FE).withOpacity(0.5),
+                        width: _isListening ? 2.0 : 1.0,
+                      ),
+                    ),
+                    child: Icon(
+                      _isListening ? Icons.graphic_eq_rounded : Icons.mic_none_rounded,
+                      color: _isListening ? Colors.white : const Color(0xFF00F2FE),
+                      size: _isListening ? 32 : 28,
+                    ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           );
         },
@@ -1160,296 +1398,377 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
+  Widget _buildRipple(int index, double animationValue) {
+    // Offset the animation for each ripple so they expand one after another
+    final double phase = (animationValue + (index * 0.33)) % 1.0;
+    // Scale goes from 0.5 to 2.0
+    final double scale = 0.5 + (phase * 1.5);
+    // Opacity fades out as it expands
+    final double opacity = 1.0 - phase;
+
+    return Transform.scale(
+      scale: scale,
+      child: Container(
+        width: 70,
+        height: 70,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFF00F2FE).withOpacity(opacity * 0.8),
+            width: 2.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFEC4899).withOpacity(opacity * 0.3),
+              blurRadius: 15,
+              spreadRadius: 5,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSpeechOverlay() {
     return Positioned.fill(
       child: Container(
-        color: Colors.black.withOpacity(0.85),
+        color: Colors.black.withOpacity(0.65), // Slightly lighter background
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+          filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8), // Much stronger blur
           child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 16),
-                  // Header
-                  Text(
-                    "Voice Command",
-                    style: TextStyle(
-                      color: const Color(0xFF00F2FE),
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2.0,
-                      shadows: [
-                        Shadow(color: const Color(0xFF00F2FE).withOpacity(0.5), blurRadius: 8),
-                      ],
-                    ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.only(
+                    left: 20.0, 
+                    right: 20.0, 
+                    top: 40.0, // Push down slightly
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 100.0, // Room for FAB
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    "Speech Recognition",
-                    style: TextStyle(color: Colors.blueGrey, fontSize: 8, letterSpacing: 0.8),
-                  ),
-                  const Spacer(),
-
-                  // Dynamic Central Visualization Frame
-                  SizedBox(
-                    height: 160,
-                    width: double.infinity,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (_whisperStatus == "RECORDING") ...[
-                          // Wave visualizer
-                          AnimatedBuilder(
-                            animation: _waveController,
-                            builder: (context, child) {
-                              return ValueListenableBuilder<double>(
-                                valueListenable: _soundLevel,
-                                builder: (context, level, child) {
-                                  return CustomPaint(
-                                    size: const Size(double.infinity, 120),
-                                    painter: _VoiceWavePainter(
-                                      animValue: _waveController.value,
-                                      soundLevel: level,
-                                    ),
-                                  );
-                                }
-                              );
-                            },
-                          ),
-                          // Status Text
-                          Positioned(
-                            bottom: 0,
-                            child: ValueListenableBuilder<int>(
-                              valueListenable: _recordingMs,
-                              builder: (context, ms, child) {
-                                return Text(
-                                  _speechAvailable
-                                      ? "Hold to record... [ ${_formatUptimeMs(ms)} ]"
-                                      : "Recording (Offline)... [ ${_formatUptimeMs(ms)} ]",
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 9,
-                                    fontFamily: 'monospace',
-                                    letterSpacing: 1.5,
-                                  ),
-                                );
-                              }
-                            ),
-                          ),
-                        ] else if (_whisperStatus == "PROCESSING") ...[
-                          // High-tech scanner laser spinner
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                                Text(
-                                  "Processing...",
-                                  style: TextStyle(
-                                  color: Colors.amber.shade200,
-                                  fontFamily: 'monospace',
-                                  fontSize: 9,
-                                  letterSpacing: 1.0,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ] else if (_whisperStatus == "DONE") ...[
-                          // Success state
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: const Color(0xFF10B981).withOpacity(0.1),
-                                  border: Border.all(color: const Color(0xFF10B981).withOpacity(0.4), width: 1.5),
-                                ),
-                                child: const Icon(
-                                  Icons.check_rounded,
-                                  color: Color(0xFF10B981),
-                                  size: 32,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                "SPEECH TRANSCRIBED SUCCESSFULLY",
-                                style: TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 10,
-                                  letterSpacing: 1.0,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-
-                  // Real-time voice Transcription display
-                  const SizedBox(height: 12),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(24.0),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withOpacity(0.04)),
+                      color: const Color(0xFF0F172A).withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(color: const Color(0xFF00F2FE).withOpacity(0.15), blurRadius: 50, spreadRadius: -10),
+                        BoxShadow(color: const Color(0xFFEC4899).withOpacity(0.1), blurRadius: 40, offset: const Offset(0, 20)),
+                      ],
                     ),
-                    child: Text(
-                      _transcribedText.isEmpty
-                          ? (_isListening ? "( listening for speech... )" : "( speak, type custom input, or tap preset )")
-                          : "\"$_transcribedText\"",
-                      style: TextStyle(
-                        color: _transcribedText.isEmpty ? Colors.blueGrey : Colors.white,
-                        fontSize: 13,
-                        fontStyle: _transcribedText.isEmpty ? FontStyle.italic : FontStyle.normal,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'monospace',
-                        height: 1.4,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const Spacer(),
-
-                  // Holographic Command Suggestion Chips
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Presets",
-                        style: TextStyle(color: Colors.blueGrey, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                      ),
-                      const SizedBox(height: 6),
-                      SizedBox(
-                        height: 38,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min, // Wrap content tightly!
+                      children: [
+                        // Header and Dismiss Button
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildPresetChip("go forward", Colors.green),
-                            _buildPresetChip("stop robot", Colors.red),
-                            _buildPresetChip("turn left", Colors.cyan),
-                            _buildPresetChip("turn right", Colors.cyan),
-                            _buildPresetChip("honk horn", Colors.teal),
-                            _buildPresetChip("headlights on", Colors.amber),
-                            _buildPresetChip("headlights off", Colors.orange),
-                            _buildPresetChip("show happy face", Colors.purple),
-                            _buildPresetChip("show sad face", Colors.deepPurple),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Custom Text Speech Injector (For robust testing anywhere!)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Text Input",
-                        style: TextStyle(color: Colors.blueGrey, fontSize: 8, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 42,
-                              child: TextField(
-                                controller: _customInputController,
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'monospace'),
-                                decoration: InputDecoration(
-                                  filled: true,
-                                  fillColor: const Color(0xFF1E293B).withOpacity(0.3),
-                                  hintText: "Type voice command text here...",
-                                  hintStyle: TextStyle(color: Colors.blueGrey.shade600, fontSize: 11),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                            const SizedBox(width: 48), // Balance for centering
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    "Voice Command",
+                                    style: TextStyle(
+                                      color: const Color(0xFF00F2FE),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 2.5,
+                                      shadows: [
+                                        Shadow(color: const Color(0xFF00F2FE).withOpacity(0.5), blurRadius: 8),
+                                      ],
+                                    ),
                                   ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide: const BorderSide(color: Color(0xFF00F2FE), width: 1.0),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    "Speech Recognition",
+                                    style: TextStyle(color: Colors.blueGrey, fontSize: 8, letterSpacing: 1.0),
                                   ),
-                                ),
-                                onSubmitted: (val) {
-                                  if (val.trim().isNotEmpty) {
-                                    _customInputController.clear();
-                                    FocusScope.of(context).unfocus();
-                                    _injectPresetCommand(val);
+                                ],
+                              ),
+                            ),
+                            Container(
+                              width: 36,
+                              height: 36,
+                              margin: const EdgeInsets.only(left: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.05),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
+                                onPressed: () {
+                                  setState(() {
+                                    _isOverlayVisible = false;
+                                    _isListening = false;
+                                    _whisperStatus = "";
+                                  });
+                                  _recordingTimer?.cancel();
+                                  _waveController.stop();
+                                  if (_speechAvailable) {
+                                    _speech.stop();
                                   }
                                 },
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            height: 42,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                final text = _customInputController.text.trim();
-                                if (text.isNotEmpty) {
-                                  _customInputController.clear();
-                                  FocusScope.of(context).unfocus();
-                                  _injectPresetCommand(text);
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF00F2FE).withOpacity(0.15),
-                                foregroundColor: const Color(0xFF00F2FE),
-                                side: const BorderSide(color: Color(0xFF00F2FE), width: 1.0),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                              ),
-                              child: const Icon(Icons.send_rounded, size: 14),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 16),
+
+                        // Dynamic Central Visualization Frame with CLIP RECT to prevent overflow!
+                        ClipRect(
+                          child: SizedBox(
+                            height: 180, // Taller bounds for bigger waves
+                            width: double.infinity,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                if (_whisperStatus == "RECORDING") ...[
+                                  // Wave visualizer
+                                  AnimatedBuilder(
+                                    animation: _waveController,
+                                    builder: (context, child) {
+                                      return ValueListenableBuilder<double>(
+                                        valueListenable: _soundLevel,
+                                        builder: (context, level, child) {
+                                          return CustomPaint(
+                                            size: const Size(double.infinity, 180),
+                                            painter: _VoiceWavePainter(
+                                              animValue: _waveController.value,
+                                              soundLevel: level,
+                                            ),
+                                          );
+                                        }
+                                      );
+                                    },
+                                  ),
+                                  // Status Text
+                                  Positioned(
+                                    bottom: 0,
+                                    child: ValueListenableBuilder<int>(
+                                      valueListenable: _recordingMs,
+                                      builder: (context, ms, child) {
+                                        return Text(
+                                          _speechAvailable
+                                              ? "Hold to record... [ ${_formatUptimeMs(ms)} ]"
+                                              : "Recording (Offline)... [ ${_formatUptimeMs(ms)} ]",
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 9,
+                                            fontFamily: 'monospace',
+                                            letterSpacing: 1.5,
+                                          ),
+                                        );
+                                      }
+                                    ),
+                                  ),
+                                ] else if (_whisperStatus == "PROCESSING") ...[
+                                  // High-tech scanner laser spinner
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const SizedBox(
+                                        width: 50,
+                                        height: 50,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 3.0,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF8B5CF6)),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 20),
+                                        Text(
+                                          "Processing...",
+                                          style: TextStyle(
+                                          color: Colors.amber.shade200,
+                                          fontFamily: 'monospace',
+                                          fontSize: 10,
+                                          letterSpacing: 1.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ] else if (_whisperStatus == "DONE") ...[
+                                  // Success state
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(0xFF10B981).withOpacity(0.15),
+                                          border: Border.all(color: const Color(0xFF10B981).withOpacity(0.5), width: 2.0),
+                                        ),
+                                        child: const Icon(
+                                          Icons.check_rounded,
+                                          color: Color(0xFF10B981),
+                                          size: 36,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      const Text(
+                                        "SPEECH TRANSCRIBED SUCCESSFULLY",
+                                        style: TextStyle(
+                                          color: Color(0xFF10B981),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10,
+                                          letterSpacing: 1.0,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  // Dismiss overlay helper
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _isOverlayVisible = false;
-                        _isListening = false;
-                        _whisperStatus = "";
-                      });
-                      _recordingTimer?.cancel();
-                      _waveController.stop();
-                      if (_speechAvailable) {
-                        _speech.stop();
-                      }
-                    },
-                    child: const Text(
-                      "DISMISS DIALOG",
-                      style: TextStyle(color: Colors.grey, fontSize: 9, letterSpacing: 1.0, decoration: TextDecoration.underline),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Real-time voice Transcription display
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E293B).withOpacity(0.4),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white.withOpacity(0.06)),
+                          ),
+                          child: Text(
+                            _transcribedText.isEmpty
+                                ? (_isListening ? "( listening for speech... )" : "( speak, type custom input, or tap preset )")
+                                : "\"$_transcribedText\"",
+                            style: TextStyle(
+                              color: _transcribedText.isEmpty ? Colors.blueGrey : Colors.white,
+                              fontSize: 14,
+                              fontStyle: _transcribedText.isEmpty ? FontStyle.italic : FontStyle.normal,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'monospace',
+                              height: 1.4,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        
+                        const SizedBox(height: 32),
+
+                        // Holographic Command Suggestion Chips
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Presets",
+                              style: TextStyle(color: Colors.blueGrey, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 38,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                physics: const BouncingScrollPhysics(),
+                                children: [
+                                  _buildPresetChip("go forward", Colors.green),
+                                  _buildPresetChip("stop robot", Colors.red),
+                                  _buildPresetChip("turn left", Colors.cyan),
+                                  _buildPresetChip("turn right", Colors.cyan),
+                                  _buildPresetChip("honk horn", Colors.teal),
+                                  _buildPresetChip("headlights on", Colors.amber),
+                                  _buildPresetChip("headlights off", Colors.orange),
+                                  _buildPresetChip("show happy face", Colors.purple),
+                                  _buildPresetChip("show sad face", Colors.deepPurple),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 24),
+
+                        // Custom Text Speech Injector
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Text Input",
+                              style: TextStyle(color: Colors.blueGrey, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 44,
+                                    child: TextField(
+                                      controller: _customInputController,
+                                      style: const TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'monospace'),
+                                      decoration: InputDecoration(
+                                        filled: true,
+                                        fillColor: const Color(0xFF1E293B).withOpacity(0.5),
+                                        hintText: "Type voice command text here...",
+                                        hintStyle: TextStyle(color: Colors.blueGrey.shade600, fontSize: 11),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: const BorderSide(color: Color(0xFF00F2FE), width: 1.5),
+                                        ),
+                                      ),
+                                      onSubmitted: (val) {
+                                        if (val.trim().isNotEmpty) {
+                                          _customInputController.clear();
+                                          FocusScope.of(context).unfocus();
+                                          _injectPresetCommand(val);
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                SizedBox(
+                                  height: 44,
+                                  width: 44,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      final text = _customInputController.text.trim();
+                                      if (text.isNotEmpty) {
+                                        _customInputController.clear();
+                                        FocusScope.of(context).unfocus();
+                                        _injectPresetCommand(text);
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF00F2FE).withOpacity(0.15),
+                                      foregroundColor: const Color(0xFF00F2FE),
+                                      side: const BorderSide(color: Color(0xFF00F2FE), width: 1.5),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                    ),
+                                    child: const Icon(Icons.send_rounded, size: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 24),
+                        
+                        // (Dismiss button moved to top right)
+                      ],
                     ),
                   ),
-                ],
-              ),
+                );
+              }
             ),
           ),
         ),
@@ -1481,37 +1800,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
     );
   }
 
-  Widget _buildStepRow(String number, String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            alignment: Alignment.center,
-            width: 16,
-            height: 16,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.blueAccent.withOpacity(0.2),
-              border: Border.all(color: Colors.blueAccent.withOpacity(0.5)),
-            ),
-            child: Text(
-              number,
-              style: const TextStyle(color: Colors.blueAccent, fontSize: 9, fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildStatCard({
     required String title,
@@ -1575,6 +1863,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       ),
     );
   }
+
 }
 
 // Fluid, Multi-layered Siri-style Sine Wave Painter
@@ -1586,49 +1875,83 @@ class _VoiceWavePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Use BlendMode.screen to make overlapping colors intensely bright like plasma
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeCap = StrokeCap.round
+      ..blendMode = BlendMode.screen;
 
     final centerY = size.height / 2;
     final width = size.width;
 
-    // Draw 3 overlapping transparent waves with varying frequency and phases
-    _drawSingleWave(
-      canvas, 
-      paint, 
-      width, 
-      centerY, 
-      color: const Color(0xFF00F2FE).withOpacity(0.85), // Cyan
-      frequency: 1.4,
-      amplitude: 12.0 + (soundLevel * 35.0),
+    // Amplified dynamic sound level (minimum 0.05 so it's never completely dead)
+    final dynamicLevel = math.max(0.05, soundLevel);
+    final maxAmplitude = 30.0 + (dynamicLevel * 140.0); // Massive bounce on speech
+
+    // We draw 6 overlapping glowing waves to create a dense energy core
+    _drawGlowingWave(
+      canvas, paint, width, centerY, 
+      color: const Color(0xFF00F2FE), // Bright Cyan
+      frequency: 1.2,
+      amplitude: maxAmplitude * 0.8,
       phaseShift: animValue * 2 * math.pi,
+      thickness: 4.0,
+      glowBlur: 15.0,
     );
 
-    _drawSingleWave(
-      canvas, 
-      paint, 
-      width, 
-      centerY, 
-      color: const Color(0xFFEC4899).withOpacity(0.65), // Laser Pink
-      frequency: 0.95,
-      amplitude: 20.0 + (soundLevel * 45.0),
-      phaseShift: -animValue * 2 * math.pi + 1.2,
+    _drawGlowingWave(
+      canvas, paint, width, centerY, 
+      color: const Color(0xFFEC4899), // Neon Pink
+      frequency: 1.8,
+      amplitude: maxAmplitude * 0.6,
+      phaseShift: -animValue * 3 * math.pi + 1.2,
+      thickness: 3.5,
+      glowBlur: 12.0,
     );
 
-    _drawSingleWave(
-      canvas, 
-      paint, 
-      width, 
-      centerY, 
-      color: const Color(0xFF8B5CF6).withOpacity(0.45), // Royal Purple
-      frequency: 2.1,
-      amplitude: 8.0 + (soundLevel * 20.0),
-      phaseShift: animValue * math.pi + 2.5,
+    _drawGlowingWave(
+      canvas, paint, width, centerY, 
+      color: const Color(0xFF8B5CF6), // Laser Purple
+      frequency: 0.9,
+      amplitude: maxAmplitude * 1.0,
+      phaseShift: animValue * 1.5 * math.pi + 2.5,
+      thickness: 5.0,
+      glowBlur: 20.0,
+    );
+
+    // Inner Core Plasma lines (thinner, brighter, faster)
+    _drawGlowingWave(
+      canvas, paint, width, centerY, 
+      color: Colors.white,
+      frequency: 2.2,
+      amplitude: maxAmplitude * 0.3,
+      phaseShift: -animValue * 4 * math.pi,
+      thickness: 2.0,
+      glowBlur: 5.0,
+    );
+    
+    _drawGlowingWave(
+      canvas, paint, width, centerY, 
+      color: const Color(0xFF00F2FE),
+      frequency: 1.5,
+      amplitude: maxAmplitude * 0.4,
+      phaseShift: animValue * 2.5 * math.pi + 0.8,
+      thickness: 2.5,
+      glowBlur: 8.0,
+    );
+    
+    _drawGlowingWave(
+      canvas, paint, width, centerY, 
+      color: const Color(0xFFEC4899),
+      frequency: 2.8,
+      amplitude: maxAmplitude * 0.2,
+      phaseShift: -animValue * 5 * math.pi + 3.1,
+      thickness: 1.5,
+      glowBlur: 4.0,
     );
   }
 
-  void _drawSingleWave(
+  void _drawGlowingWave(
     Canvas canvas, 
     Paint paint, 
     double width, 
@@ -1637,13 +1960,28 @@ class _VoiceWavePainter extends CustomPainter {
     required double frequency,
     required double amplitude,
     required double phaseShift,
+    required double thickness,
+    required double glowBlur,
   }) {
+    // Draw the glow layer first
+    paint.strokeWidth = thickness * 2.5;
+    paint.color = color.withOpacity(0.4);
+    paint.maskFilter = MaskFilter.blur(BlurStyle.normal, glowBlur);
+    _drawPath(canvas, paint, width, centerY, frequency, amplitude, phaseShift);
+
+    // Draw the solid core layer on top
+    paint.strokeWidth = thickness;
     paint.color = color;
+    paint.maskFilter = null; // No blur for the sharp core
+    _drawPath(canvas, paint, width, centerY, frequency, amplitude, phaseShift);
+  }
+
+  void _drawPath(Canvas canvas, Paint paint, double width, double centerY, double frequency, double amplitude, double phaseShift) {
     final path = Path();
-    
-    for (double x = 0; x <= width; x++) {
+    for (double x = 0; x <= width; x += 2) { // Step by 2 for performance
       final relativeX = x / width;
-      final edgeFade = math.sin(relativeX * math.pi); // Fade amplitude near boundaries
+      // Use a bell curve (sine) to pinch the edges so the wave only expands in the middle
+      final edgeFade = math.pow(math.sin(relativeX * math.pi), 1.5).toDouble(); 
       
       final y = centerY + amplitude * edgeFade * math.sin(frequency * 2 * math.pi * relativeX + phaseShift);
       
@@ -1653,7 +1991,6 @@ class _VoiceWavePainter extends CustomPainter {
         path.lineTo(x, y);
       }
     }
-    
     canvas.drawPath(path, paint);
   }
 

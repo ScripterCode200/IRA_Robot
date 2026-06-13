@@ -292,7 +292,6 @@ class _FaceScreenState extends State<FaceScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     Color faceColor = const Color(0xFF00F2FE);
-    String titleText = "COMPANION EMOTIVE MATRIX";
     
     switch (_currentExpression) {
       case FaceExpression.neutral:
@@ -313,69 +312,83 @@ class _FaceScreenState extends State<FaceScreen> with TickerProviderStateMixin {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF05070B),
+      backgroundColor: const Color(0xFF000000), // Pitch Black AMOLED
       body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            // Header title
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
-              child: Row(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 8),
+              
+              // HEADER (Matches Dashboard)
+              Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        titleText,
+                        "Expressions",
                         style: TextStyle(
-                          color: faceColor.withOpacity(0.8),
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
                           letterSpacing: 1.5,
+                          color: Colors.white,
+                          shadows: [Shadow(color: faceColor.withOpacity(0.5), blurRadius: 10)],
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        "LED PANEL SCREEN MIRROR",
-                        style: TextStyle(color: Colors.blueGrey, fontSize: 8, letterSpacing: 1),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Container(
+                            width: 8, height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF)).withOpacity(0.6),
+                                  blurRadius: 6, spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            widget.isConnected ? "SYSTEM ONLINE" : "SYSTEM OFFLINE",
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.5,
+                              color: widget.isConnected ? const Color(0xFF00F2FE) : const Color(0xFFD946EF),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: widget.isConnected ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: widget.isConnected ? Colors.green.withOpacity(0.4) : Colors.red.withOpacity(0.4),
-                      ),
-                    ),
-                    child: Text(
-                      widget.isConnected ? "CONNECTED" : "OFFLINE",
-                      style: TextStyle(
-                        color: widget.isConnected ? Colors.green : Colors.red,
-                        fontSize: 8,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                  ),
                 ],
               ),
-            ),
-            
-            // Custom Faces Gallery & Editor Button
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
+              
+              const SizedBox(height: 24),
+
+              // Custom Faces Gallery & Editor Buttons
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.05), width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    SizedBox(
                       height: 40,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
                         itemCount: _customFaces.length + 1,
                         itemBuilder: (context, index) {
                           if (index == 0) {
@@ -386,246 +399,218 @@ class _FaceScreenState extends State<FaceScreen> with TickerProviderStateMixin {
                         },
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E293B),
-                          foregroundColor: const Color(0xFF00F2FE),
-                          side: const BorderSide(color: Color(0xFF00F2FE), width: 1),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          minimumSize: const Size(120, 32),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0B0F19),
+                              foregroundColor: const Color(0xFF00F2FE),
+                              side: BorderSide(color: const Color(0xFF00F2FE).withOpacity(0.5), width: 1),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.brush, size: 16),
+                            label: const Text("CUSTOM EDITOR", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                            onPressed: () => _openEditor(_activeCustomFace),
+                          ),
                         ),
-                        icon: const Icon(Icons.brush, size: 14),
-                        label: const Text("CUSTOM EDITOR", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
-                        onPressed: () => _openEditor(_activeCustomFace),
-                      ),
-                      const SizedBox(height: 4),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1E293B),
-                          foregroundColor: const Color(0xFFD946EF),
-                          side: const BorderSide(color: Color(0xFFD946EF), width: 1),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          minimumSize: const Size(120, 32),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0B0F19),
+                              foregroundColor: const Color(0xFFD946EF),
+                              side: BorderSide(color: const Color(0xFFD946EF).withOpacity(0.5), width: 1),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.auto_awesome, size: 16),
+                            label: const Text("GENERATE AI", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+                            onPressed: _openAiGenerator,
+                          ),
                         ),
-                        icon: const Icon(Icons.auto_awesome, size: 14),
-                        label: const Text("GENERATE AI", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold)),
-                        onPressed: _openAiGenerator,
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
 
-            // Interactive Robotic Face Screen
-            Expanded(
-              child: Center(
-                child: GestureDetector(
-                  onTap: () {
-                    // Cyclic tap expression triggers
-                    int nextIdx = (_currentExpression.index + 1) % FaceExpression.values.length;
-                    _setExpression(FaceExpression.values[nextIdx]);
-                  },
-                  child: AspectRatio(
-                    aspectRatio: 1.0,
+              // Interactive Robotic Face Screen
+              Expanded(
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      int nextIdx = (_currentExpression.index + 1) % FaceExpression.values.length;
+                      _setExpression(FaceExpression.values[nextIdx]);
+                    },
                     child: Container(
-                      margin: const EdgeInsets.all(24),
+                      margin: const EdgeInsets.symmetric(vertical: 24),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0B0F19),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: faceColor.withOpacity(0.15), width: 2),
+                        color: const Color(0xFF05070B),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: faceColor.withOpacity(0.3), width: 2),
                         boxShadow: [
                           BoxShadow(
-                            color: faceColor.withOpacity(0.03),
-                            blurRadius: 20,
-                            spreadRadius: 2,
+                            color: faceColor.withOpacity(0.1),
+                            blurRadius: 30,
+                            spreadRadius: 5,
                           ),
                         ],
                       ),
-                      child: Stack(
-                        children: [
-                          // Glow background lines
-                          Positioned.fill(
-                            child: GridPaper(
-                              color: faceColor.withOpacity(0.01),
-                              divisions: 1,
-                              subdivisions: 1,
-                              interval: 60,
-                            ),
-                          ),
-                          // The main custom painted face
-                          AnimatedBuilder(
-                            animation: Listenable.merge([
-                              _eyeMovementController,
-                              _blinkController,
-                              _mouthWaveController,
-                            ]),
-                            builder: (context, child) {
-                              if (_activeCustomFace != null) {
-                                if (_activeCustomFace!.htmlCode != null && _webViewController != null) {
-                                  // Live JS Canvas animation
-                                  return AspectRatio(
-                                    aspectRatio: 2.0,
-                                    child: Center(
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          SizedBox(
-                                            width: double.infinity,
-                                            child: WebViewWidget(controller: _webViewController!),
-                                          ),
-                                          if (_isInitializingFace)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black87,
-                                                borderRadius: BorderRadius.circular(12),
-                                                border: Border.all(color: const Color(0xFF00F2FE)),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  SizedBox(
-                                                    width: 14, height: 14,
-                                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00F2FE))
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(28),
+                        child: AspectRatio(
+                          aspectRatio: 1.0,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: GridPaper(
+                                  color: faceColor.withOpacity(0.02),
+                                  divisions: 1, subdivisions: 1, interval: 60,
+                                ),
+                              ),
+                              AnimatedBuilder(
+                                animation: Listenable.merge([_eyeMovementController, _blinkController, _mouthWaveController]),
+                                builder: (context, child) {
+                                  if (_activeCustomFace != null) {
+                                    if (_activeCustomFace!.htmlCode != null && _webViewController != null) {
+                                      return AspectRatio(
+                                        aspectRatio: 2.0,
+                                        child: Center(
+                                          child: Stack(
+                                            alignment: Alignment.center,
+                                            children: [
+                                              SizedBox(width: double.infinity, child: WebViewWidget(controller: _webViewController!)),
+                                              if (_isInitializingFace)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black87,
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(color: const Color(0xFF00F2FE)),
                                                   ),
-                                                  SizedBox(width: 8),
-                                                  Text("INITIALIZING FACE BLOCK...", style: TextStyle(color: Color(0xFF00F2FE), fontSize: 9, fontWeight: FontWeight.bold)),
-                                                ],
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                } else {
-                                  // Static Custom Pixel Grid
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00F2FE))),
+                                                      SizedBox(width: 8),
+                                                      Text("INITIALIZING FACE BLOCK...", style: TextStyle(color: Color(0xFF00F2FE), fontSize: 9, fontWeight: FontWeight.bold)),
+                                                    ],
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      return CustomPaint(
+                                        size: const Size(double.infinity, double.infinity),
+                                        painter: _PixelFacePainter(_activeCustomFace!.grid, faceColor),
+                                      );
+                                    }
+                                  }
                                   return CustomPaint(
                                     size: const Size(double.infinity, double.infinity),
-                                    painter: _PixelFacePainter(_activeCustomFace!.grid, faceColor),
+                                    painter: _RobotFacePainter(
+                                      expression: _currentExpression,
+                                      color: faceColor,
+                                      isBlinking: _isBlinking,
+                                      blinkValue: _blinkController.value,
+                                      movementValue: _eyeMovementController.value,
+                                      mouthValue: _mouthWaveController.value,
+                                    ),
                                   );
-                                }
-                              }
-                              
-                              return CustomPaint(
-                                size: const Size(double.infinity, double.infinity),
-                                painter: _RobotFacePainter(
-                                  expression: _currentExpression,
-                                  color: faceColor,
-                                  isBlinking: _isBlinking,
-                                  blinkValue: _blinkController.value,
-                                  movementValue: _eyeMovementController.value,
-                                  mouthValue: _mouthWaveController.value,
-                                ),
-                              );
-                            },
+                                },
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
 
-            // Expression triggers selectors cockpit panel
-            Container(
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B).withOpacity(0.4),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "MICROCONTROLLER FACE TRIGGER OVERRIDES",
-                    style: TextStyle(color: Colors.blueGrey, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.2),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: FaceExpression.values.map((expr) {
-                      IconData icon;
-                      String label;
-                      Color btnColor;
-                      
-                      switch (expr) {
-                        case FaceExpression.neutral:
-                          icon = Icons.blur_on_rounded;
-                          label = "SCAN";
-                          btnColor = const Color(0xFF00F2FE);
-                          break;
-                        case FaceExpression.happy:
-                          icon = Icons.sentiment_very_satisfied_rounded;
-                          label = "HAPPY";
-                          btnColor = const Color(0xFF10B981);
-                          break;
-                        case FaceExpression.excited:
-                          icon = Icons.auto_awesome_rounded;
-                          label = "EXCITE";
-                          btnColor = const Color(0xFFD946EF);
-                          break;
-                        case FaceExpression.shocked:
-                          icon = Icons.electric_bolt_rounded;
-                          label = "SHOCK";
-                          btnColor = const Color(0xFFF59E0B);
-                          break;
-                        case FaceExpression.sad:
-                          icon = Icons.sentiment_very_dissatisfied_rounded;
-                          label = "SAD";
-                          btnColor = const Color(0xFF3B82F6);
-                          break;
-                      }
+              // Expression triggers selectors cockpit panel
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withOpacity(0.05), width: 1.5),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "EMOTIVE OVERRIDES",
+                      style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: FaceExpression.values.map((expr) {
+                        IconData icon;
+                        String label;
+                        Color btnColor;
+                        
+                        switch (expr) {
+                          case FaceExpression.neutral:
+                            icon = Icons.blur_on_rounded; label = "SCAN"; btnColor = const Color(0xFF00F2FE); break;
+                          case FaceExpression.happy:
+                            icon = Icons.sentiment_very_satisfied_rounded; label = "HAPPY"; btnColor = const Color(0xFF10B981); break;
+                          case FaceExpression.excited:
+                            icon = Icons.auto_awesome_rounded; label = "EXCITE"; btnColor = const Color(0xFFD946EF); break;
+                          case FaceExpression.shocked:
+                            icon = Icons.electric_bolt_rounded; label = "SHOCK"; btnColor = const Color(0xFFF59E0B); break;
+                          case FaceExpression.sad:
+                            icon = Icons.sentiment_very_dissatisfied_rounded; label = "SAD"; btnColor = const Color(0xFF3B82F6); break;
+                        }
 
-                      bool isSelected = _currentExpression == expr;
+                        bool isSelected = _currentExpression == expr;
 
-                      return Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                          child: InkWell(
-                            onTap: () => _setExpression(expr),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: isSelected ? btnColor.withOpacity(0.15) : const Color(0xFF0B0F19),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isSelected ? btnColor : Colors.white.withOpacity(0.08),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Icon(icon, color: isSelected ? btnColor : Colors.blueGrey, size: 20),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    label,
-                                    style: TextStyle(
-                                      color: isSelected ? Colors.white : Colors.blueGrey,
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: InkWell(
+                              onTap: () => _setExpression(expr),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? btnColor.withOpacity(0.15) : const Color(0xFF05070B),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: isSelected ? btnColor : Colors.white.withOpacity(0.05),
+                                    width: 1.5,
                                   ),
-                                ],
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(icon, color: isSelected ? btnColor : Colors.blueGrey, size: 22),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      label,
+                                      style: TextStyle(
+                                        color: isSelected ? Colors.white : Colors.blueGrey,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ],
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
